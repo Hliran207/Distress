@@ -5,6 +5,7 @@ from pymongo.errors import DuplicateKeyError
 
 from distress_core.contracts.prediction import DecidedBy
 from distress_core.contracts.records import TelegramMessageRecord
+from distress_core.settings import MongoSettings
 
 
 class Stats(BaseModel):
@@ -24,11 +25,9 @@ class MessageRepository:
         self._collection = collection
 
     @classmethod
-    def connect(
-        cls, uri: str, db_name: str, collection_name: str
-    ) -> "MessageRepository":
-        client = MongoClient(uri, tz_aware=True)
-        return cls(client[db_name][collection_name])
+    def connect(cls, settings: MongoSettings) -> "MessageRepository":
+        client = MongoClient(settings.mongo_uri, tz_aware=True)
+        return cls(client[settings.mongo_db][settings.mongo_collection])
 
     def insert(self, record: TelegramMessageRecord) -> bool:
         """Store a record. Return False if a record with the same id already exists."""
