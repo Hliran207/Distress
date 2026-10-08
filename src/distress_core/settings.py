@@ -1,5 +1,6 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr
 
 
 class _EnvSettings(BaseSettings):
@@ -32,3 +33,18 @@ class MongoSettings(_EnvSettings):
     mongo_uri: str
     mongo_db: str = "reddit_distress_db"
     mongo_collection: str = "telegram_posts"
+
+
+class KafkaSettings(_EnvSettings):
+    """Where messages flow between the bot and the inference service."""
+
+    kafka_bootstrap: str = "kafka:9092"
+    kafka_topic: str = "telegram.messages"
+    kafka_dlq_topic: str = "telegram.messages.dlq"
+
+
+class TelegramSettings(_EnvSettings):
+    """How the bot reaches Telegram."""
+
+    telegram_bot_token: SecretStr
+    telegram_poll_timeout: int = Field(default=30, ge=1, le=50)
