@@ -72,3 +72,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  bot:
+    build:
+      context: .
+      dockerfile: services/bot/Dockerfile
+    env_file: .env
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 40s
