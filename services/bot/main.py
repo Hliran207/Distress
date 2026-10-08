@@ -2,9 +2,9 @@ import logging
 import signal
 import time
 
-from confluent_kafka import Producer
 from pydantic import ValidationError
 
+from distress_core.messaging.base import create_producer, send_confirmed
 from distress_core.settings import KafkaSettings, TelegramSettings
 
 from .convert import to_incoming_message
@@ -18,9 +18,7 @@ RETRY_DELAY_SECONDS = 5
 def run() -> None:
     kafka = KafkaSettings()
     telegram = TelegramClient(TelegramSettings())
-    producer = Producer(
-        {"bootstrap.servers": kafka.kafka_bootstrap, "enable.idempotence": True}
-    )
+    producer = create_producer(kafka)
 
     running = True
 
@@ -47,12 +45,7 @@ def run() -> None:
         if not updates:
             continue
 
-        failures = []
-
-        def on_delivery(err, msg):
-            if err is not None:
-                failures.append(err)
-
+        records = []
         for update in updates:
             try:
                 message = to_incoming_message(update)
@@ -61,21 +54,11 @@ def run() -> None:
                     "Skipping malformed update %s: %s", update.get("update_id"), exc
                 )
                 continue
-            if message is None:
-                continue
-            producer.produce(
-                kafka.kafka_topic,
-                key=str(message.chat_id),
-                value=message.model_dump_json(),
-                on_delivery=on_delivery,
-            )
+            if message is not None:
+                records.append((str(message.chat_id), message.model_dump_json()))
 
-        not_delivered = producer.flush(timeout=30)
-        if not_delivered or failures:
-            log.error(
-                "Kafka did not confirm the batch (%s). Not acknowledging; Telegram will resend",
-                failures or f"{not_delivered} pending",
-            )
+        if not send_confirmed(producer, kafka.kafka_topic, records, timeout=30):
+            log.error("Not acknowledging; Telegram will resend")
             time.sleep(RETRY_DELAY_SECONDS)
             continue
 
