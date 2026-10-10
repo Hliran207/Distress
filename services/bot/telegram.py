@@ -37,6 +37,7 @@ class TelegramClient:
             raise TelegramError(
                 f"{type(exc).__name__} (HTTP call to Telegram failed)"
             ) from None
+            # from none because we want to raise the exception without the url token.
 
         if not body.get("ok"):
             raise TelegramError(

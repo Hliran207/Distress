@@ -1,7 +1,9 @@
 import hashlib
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 
 from distress_core.cascade import Cascade
 from distress_core.contracts.prediction import PredictionResult
@@ -72,3 +74,11 @@ def stats(repo: MessageRepository = Depends(get_repo)) -> Stats:
 def health(repo: MessageRepository = Depends(get_repo)) -> dict[str, str]:
     repo.ping()
     return {"status": "ok"}
+
+
+INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(INDEX_HTML)

@@ -2,7 +2,9 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 
 def build_message_id(chat_id: int, telegram_message_id: int) -> str:
-    """The stable id of a Telegram message. we create it to avoid collisions in Kafka."""
+    """The stable id of a Telegram message. we create it to avoid collisions in Kafka and avoid duplications in the database.
+    The stable id of a Telegram message. Telegram's message_id is unique only within a chat.
+    """
     return f"tg:{chat_id}:{telegram_message_id}"
 
 

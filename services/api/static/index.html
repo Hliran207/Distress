@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Distress Detector</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --border: #e3e6ea;
+    --text: #1d2330;
+    --muted: #6b7280;
+    --accent: #3b5bdb;
+    --danger: #c92a2a;
+    --danger-bg: #fff0f0;
+    --ok: #2b8a3e;
+    --ok-bg: #ebfbee;
+    --chip: #eef1f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0; }
+  .live { color: var(--muted); font-size: 13px; }
+  .live::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
+  .live.offline::before { background: var(--danger); }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; justify-content: space-between; align-items: baseline; }
+  .endpoint { font: 12px ui-monospace, Menlo, monospace; color: var(--muted); font-weight: normal; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .stat .label { color: var(--muted); font-size: 13px; }
+  .stat .value { font-size: 28px; font-weight: 600; }
+  .stat .sub { color: var(--muted); font-size: 12px; }
+
+  .predict { margin-bottom: 16px; }
+  .predict-row { display: flex; gap: 8px; }
+  textarea {
+    flex: 1; resize: vertical; min-height: 44px; padding: 10px;
+    border: 1px solid var(--border); border-radius: 8px; font: inherit;
+  }
+  button {
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+
+  .result { margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--bg); display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+  .result .k { color: var(--muted); font-size: 12px; }
+  .error { color: var(--danger); margin-top: 8px; }
+
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.distress { background: var(--danger-bg); color: var(--danger); }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .chip { display: inline-block; background: var(--chip); border-radius: 6px; padding: 1px 8px; font-size: 12px; margin-right: 4px; }
+  .muted { color: var(--muted); }
+  .scores { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: none; }
+  td.text { max-width: 320px; overflow-wrap: anywhere; }
+  tr.is-distress td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+
+  .pager { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
+
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: 1fr; }
+    .predict-row { flex-direction: column; }
+    .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1>Distress Detector</h1>
+    <span id="status" class="live">Live · refreshes every 5s</span>
+  </header>
+
+  <section class="stats">
+    <div class="card stat">
+      <div class="label">Messages</div>
+      <div class="value" id="stat-total">–</div>
+      <div class="sub">from Telegram</div>
+    </div>
+    <div class="card stat">
+      <div class="label">Distress</div>
+      <div class="value" id="stat-distress">–</div>
+      <div class="sub" id="stat-distress-pct">&nbsp;</div>
+    </div>
+    <div class="card stat">
+      <div class="label">Escalated to DistilBERT</div>
+      <div class="value" id="stat-escalated">–</div>
+      <div class="sub" id="stat-escalated-pct">&nbsp;</div>
+    </div>
+  </section>
+
+  <section class="card predict">
+    <h2>Try a message <span class="endpoint">POST /predict · not stored</span></h2>
+    <div class="predict-row">
+      <textarea id="predict-text" placeholder="Type a message in English…" maxlength="5000"></textarea>
+      <button id="predict-button" class="primary" disabled>Predict</button>
+    </div>
+    <div id="predict-result"></div>
+  </section>
+
+  <section class="card">
+    <h2>Latest messages <span class="endpoint">GET /messages</span></h2>
+    <div class="toolbar">
+      <label class="toggle"><input type="checkbox" id="distress-only"> Distress only</label>
+      <span class="muted" id="range"></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Sender</th>
+          <th>Message</th>
+          <th>Result</th>
+          <th class="hide-sm">Decided by</th>
+          <th class="hide-sm">Why</th>
+          <th class="hide-sm">Scores</th>
+        </tr>
+      </thead>
+      <tbody id="messages"></tbody>
+    </table>
+    <div class="pager">
+      <button id="newer" disabled>← Newer</button>
+      <button id="older" disabled>Older →</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  const REFRESH_MS = 5000;
+  const PAGE_SIZE = 20;
+  const MODEL_NAMES = { tfidf: "TF-IDF", distilbert: "DistilBERT" };
+
+  let offset = 0;
+  let distressOnly = false;
+
+  // ---------- API calls: the only place that knows URLs ----------
+
+  async function getJson(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  const api = {
+    stats: () => getJson("/stats"),
+    messages: (limit, offset, distressOnly) => {
+      const params = new URLSearchParams({ limit, offset });
+      if (distressOnly) params.set("is_distress", "true");
+      return getJson(`/messages?${params}`);
+    },
+    predict: (text) =>
+      getJson("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }),
+  };
+
+  // ---------- small DOM helpers ----------
+
+  function el(tag, { className, text } = {}, ...children) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;  // textContent: user text is never parsed as HTML
+    node.append(...children);
+    return node;
+  }
+
+  const badge = (isDistress) =>
+    el("span", { className: `badge ${isDistress ? "distress" : "ok"}`, text: isDistress ? "Distress" : "OK" });
+
+  const reasons = (list) =>
+    list.length ? list.map((r) => el("span", { className: "chip", text: r })) : [el("span", { className: "muted", text: "—" })];
+
+  const scores = (p) =>
+    p.p_bert === null ? p.p_fast.toFixed(2) : `${p.p_fast.toFixed(2)} → ${p.p_bert.toFixed(2)}`;
+
+  const percent = (part, total) => (total ? `${Math.round((100 * part) / total)}% of messages` : "\u00a0");
+
+  const localTime = (iso) =>
+    new Date(iso).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+  // ---------- rendering ----------
+
+  function renderStats(stats) {
+    document.getElementById("stat-total").textContent = stats.total;
+    document.getElementById("stat-distress").textContent = stats.distress;
+    document.getElementById("stat-escalated").textContent = stats.escalated;
+    document.getElementById("stat-distress-pct").textContent = percent(stats.distress, stats.total);
+    document.getElementById("stat-escalated-pct").textContent = percent(stats.escalated, stats.total);
+  }
+
+  function renderMessages(messages) {
+    const body = document.getElementById("messages");
+    if (!messages.length) {
+      const cell = el("td", { className: "empty", text: "No messages yet" });
+      cell.colSpan = 7;
+      body.replaceChildren(el("tr", {}, cell));
+    } else {
+      body.replaceChildren(
+        ...messages.map((m) => {
+          const p = m.prediction;
+          const row = el(
+            "tr", {},
+            el("td", { text: localTime(m.sent_at) }),
+            el("td", { text: m.sender_name ?? "—" }),
+            el("td", { className: "text", text: m.text }),
+            el("td", {}, badge(p.is_distress)),
+            el("td", { className: "hide-sm", text: MODEL_NAMES[p.decided_by] }),
+            el("td", { className: "hide-sm" }, ...reasons(p.escalation_reasons)),
+            el("td", { className: "hide-sm scores", text: scores(p) }),
+          );
+          if (p.is_distress) row.className = "is-distress";
+          return row;
+        }),
+      );
+    }
+    document.getElementById("range").textContent =
+      messages.length ? `Showing ${offset + 1}–${offset + messages.length}` : "";
+    document.getElementById("newer").disabled = offset === 0;
+    document.getElementById("older").disabled = messages.length < PAGE_SIZE;
+  }
+
+  function renderPrediction(p) {
+    const field = (label, ...content) => el("div", {}, el("div", { className: "k", text: label }), ...content);
+    document.getElementById("predict-result").replaceChildren(
+      el(
+        "div", { className: "result" },
+        field("Result", badge(p.is_distress)),
+        field("p(distress)", el("strong", { text: p.p_distress.toFixed(2) })),
+        field("Decided by", MODEL_NAMES[p.decided_by]),
+        field("Why escalated", ...reasons(p.escalation_reasons)),
+        field("Scores", el("span", { className: "scores", text: scores(p) })),
+      ),
+    );
+  }
+
+  function setOnline(online) {
+    const status = document.getElementById("status");
+    status.classList.toggle("offline", !online);
+    status.textContent = online ? "Live · refreshes every 5s" : "Cannot reach the API · retrying";
+  }
+
+  // ---------- behaviour ----------
+
+  async function refresh() {
+    try {
+      const [stats, messages] = await Promise.all([api.stats(), api.messages(PAGE_SIZE, offset, distressOnly)]);
+      renderStats(stats);
+      renderMessages(messages);
+      setOnline(true);
+    } catch {
+      setOnline(false);
+    }
+  }
+
+  const textBox = document.getElementById("predict-text");
+  const predictButton = document.getElementById("predict-button");
+
+  textBox.addEventListener("input", () => {
+    predictButton.disabled = textBox.value.trim() === "";
+  });
+
+  predictButton.addEventListener("click", async () => {
+    predictButton.disabled = true;
+    try {
+      renderPrediction(await api.predict(textBox.value.trim()));
+    } catch (error) {
+      document.getElementById("predict-result").replaceChildren(
+        el("div", { className: "error", text: `Prediction failed: ${error.message}` }),
+      );
+    } finally {
+      predictButton.disabled = textBox.value.trim() === "";
+    }
+  });
+
+  document.getElementById("distress-only").addEventListener("change", (event) => {
+    distressOnly = event.target.checked;
+    offset = 0;
+    refresh();
+  });
+
+  document.getElementById("newer").addEventListener("click", () => {
+    offset = Math.max(0, offset - PAGE_SIZE);
+    refresh();
+  });
+
+  document.getElementById("older").addEventListener("click", () => {
+    offset += PAGE_SIZE;
+    refresh();
+  });
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
